@@ -1,0 +1,14 @@
+*.json
+*.zip
+extract/*.*
+__pycache__/
+*.py[cod]
+.idea/*
+.idea/misc.xml
+.DS_Store
+*.DS_Store
+downloads/*
+tools/output/*.*
+tools/input/*.*
+artifacts/*
+*venv*

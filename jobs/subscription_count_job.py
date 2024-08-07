@@ -1,0 +1,59 @@
+import pandas as pd
+from base.etl_jobv3 import EtlJobV3
+from datetime import datetime
+
+
+class SubscriptionCountJob(EtlJobV3):
+
+	def __init__(self, target_date = None, db_connector = None, api_connector = None, file_location = ''):
+		super().__init__(jobname = __name__, target_date = target_date, db_connector = db_connector, table_name = 'subscription_count')
+
+		self.subs = {
+			"active": 0,
+			"trial": 0
+		}
+
+
+	def load_active_sub_count(self):
+		results = self.db_connector.query_business_service_db_connection(f""" 
+																select
+																    count(*) as active_subs
+																from user_subscriptions
+																where state in ('canceled', 'paying', 'payment_pending')
+																and user_uuid is not null;
+																"""
+		)
+		for result in results:
+			self.subs['active'] = result[0]
+
+
+	def load_trial_sub_count(self):
+		results = self.db_connector.query_business_service_db_connection(f""" 
+																select
+																    count(*) as active_trials
+																from user_subscriptions
+																where state in ('trialing')
+																and user_uuid is not null;
+		""")
+		for result in results:
+			self.subs['trial'] = result[0]
+
+
+	def build_final_dataframe(self):
+		record = {"run_date": datetime.utcnow(), "active": self.subs['active'], "trial": self.subs['trial']}
+		self.final_dataframe = pd.DataFrame([record])
+
+
+	def write_all_results_to_redshift(self):
+		self.loggerv3.info("Writing results to Red Shift")
+		self.db_connector.write_to_sql(self.final_dataframe, self.table_name, self.db_connector.sv2_engine(), schema='warehouse', method='multi', chunksize=5000, index=False, if_exists='append')
+		self.db_connector.update_redshift_table_permissions(self.table_name)
+
+
+	def execute(self):
+		self.loggerv3.info(f"Running Subscription Count Job")
+		self.load_active_sub_count()
+		self.load_trial_sub_count()
+		self.build_final_dataframe()
+		self.write_all_results_to_redshift()
+		self.loggerv3.success("All Processing Complete!")
